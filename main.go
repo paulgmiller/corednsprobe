@@ -30,9 +30,9 @@ const (
 
 // per‑endpoint rolling stats (reset every summaryInterval)
 type epStats struct {
-	total     atomic.Int64 // total queries
-	fail      atomic.Int64 // failures
-	rttNanos  atomic.Int64 // sum of RTT for successes
+	total    atomic.Int64 // total queries
+	fail     atomic.Int64 // failures
+	rttNanos atomic.Int64 // sum of RTT for successes
 }
 
 func main() {
@@ -97,9 +97,9 @@ func main() {
 			fmt.Println("[summary] last 10 s:")
 			for i, ip := range servers {
 				st := stats[i]
-				total := st.total.Swap(0)
-				fail := st.fail.Swap(0)
-				sumRTT := st.rttNanos.Swap(0)
+				total := st.total.Load() //this could get ahead of fail
+				fail := st.fail.Load()
+				sumRTT := st.rttNanos.Load()
 
 				if total == 0 {
 					fmt.Printf("  %s → no queries\n", ip)
