@@ -63,7 +63,7 @@ func main() {
 		for _, ip := range servers {
 			wg.Add(1)
 			go func(addr string) {
-				efer wg.Done()
+				defer wg.Done()
 				rtt, err := lookupThrough(addr)
 				if err != nil || rtt > queryTimeout {
 					log.Printf("[%s] FAIL via %s (rtt=%v, err=%v)",
