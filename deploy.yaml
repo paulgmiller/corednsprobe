@@ -50,7 +50,7 @@ spec:
       serviceAccountName: coredns-probe
       containers:
         - name: probe
-          image: paulgmiller/corednsprobe:26be985
+          image: paulgmiller/corednsprobe:d80b1c0
           imagePullPolicy: IfNotPresent
           resources:
             requests:
