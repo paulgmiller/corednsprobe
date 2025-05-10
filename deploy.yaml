@@ -1,0 +1,62 @@
+# ServiceAccount: gives the pod an identity
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: coredns-probe
+  namespace: kube-system
+---
+# Role: allows read‑only access to EndpointSlices (and Endpoints for safety)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: coredns-probe
+  namespace: kube-system
+rules:
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["get", "list", "watch"]
+---
+# RoleBinding: binds the Role to the ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: coredns-probe
+  namespace: kube-system
+subjects:
+  - kind: ServiceAccount
+    name: coredns-probe
+    namespace: kube-system
+roleRef:
+  kind: Role
+  name: coredns-probe
+  apiGroup: rbac.authorization.k8s.io
+---
+# Deployment: runs a single, lightweight probe pod
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coredns-probe
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coredns-probe
+  template:
+    metadata:
+      labels:
+        app: coredns-probe
+    spec:
+      serviceAccountName: coredns-probe
+      containers:
+        - name: probe
+          image: paulgmiller/corednsprobe:072a3182a
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+

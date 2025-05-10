@@ -1,102 +1,142 @@
-// coredns_probe_slices.go
+// coredns_probe_slices.go — v3: per‑server success‑rate & RTT
 package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
 const (
-	namespace        = "kube-system"
-	serviceName      = "kube-dns"          // most clusters still call the service “kube-dns”
-	queryDomain      = "bing.com"
-	queryTimeout     = 100 * time.Millisecond
-	loopInterval     = 100 * time.Millisecond
-	sliceLabel       = discoveryv1.LabelServiceName // = "kubernetes.io/service-name"
+	namespace       = "kube-system"
+	serviceName     = "kube-dns"
+	queryDomain     = "bing.com"
+	queryTimeout    = 100 * time.Millisecond
+	loopInterval    = 100 * time.Millisecond
+	summaryInterval = 10 * time.Second
+	sliceLabel      = discoveryv1.LabelServiceName
 )
+
+// per‑endpoint rolling stats (reset every summaryInterval)
+type epStats struct {
+	total     atomic.Int64 // total queries
+	fail      atomic.Int64 // failures
+	rttNanos  atomic.Int64 // sum of RTT for successes
+}
 
 func main() {
 	ctx := context.Background()
 	client := mustClient()
 
-	// ---------------------------------------------------------------------
-	// Discover CoreDNS pod IPs from EndpointSlices
-	// ---------------------------------------------------------------------
-	slices, err := client.DiscoveryV1().
-		EndpointSlices(namespace).
+	// --- discover CoreDNS pod IPs via EndpointSlices ---------------------------
+	slices, err := client.DiscoveryV1().EndpointSlices(namespace).
 		List(ctx, metav1.ListOptions{LabelSelector: sliceLabel + "=" + serviceName})
 	if err != nil {
 		log.Fatalf("listing EndpointSlices failed: %v", err)
 	}
+
 	var servers []string
 	for _, es := range slices.Items {
 		for _, ep := range es.Endpoints {
 			for _, addr := range ep.Addresses {
-				servers = append(servers, addr) // plain IP (port fixed to 53 later)
+				servers = append(servers, addr)
 			}
 		}
 	}
 	if len(servers) == 0 {
 		log.Fatalf("no CoreDNS pod IPs found in EndpointSlices for %s/%s", namespace, serviceName)
 	}
-	log.Printf("found %d CoreDNS endpoints: %v", len(servers), servers)
+	log.Printf("found %d CoreDNS endpoints %v", len(servers), servers)
 
-	// ---------------------------------------------------------------------
-	// Prepare loop → every 0.1 s resolve bing.com through each IP
-	// ---------------------------------------------------------------------
-	ticker := time.NewTicker(loopInterval)
-	defer ticker.Stop()
+	// --- allocate stats slice aligned with servers -----------------------------
+	stats := make([]*epStats, len(servers))
+	for i := range stats {
+		stats[i] = &epStats{}
+	}
 
-	for ts := range ticker.C {
-		var wg sync.WaitGroup
-		for _, ip := range servers {
-			wg.Add(1)
-			go func(addr string) {
-				defer wg.Done()
-				rtt, err := lookupThrough(addr)
-				if err != nil || rtt > queryTimeout {
-					log.Printf("[%s] FAIL via %s (rtt=%v, err=%v)",
-						ts.Format(time.RFC3339Nano), addr, rtt, err)
-				} else {
-					log.Printf("[%s] OK   via %s (rtt=%v)",
-						ts.Format(time.RFC3339Nano), addr, rtt)
+	// --- ticker loops ----------------------------------------------------------
+	probeTicker := time.NewTicker(loopInterval)
+	defer probeTicker.Stop()
+
+	summaryTicker := time.NewTicker(summaryInterval)
+	defer summaryTicker.Stop()
+
+	for {
+		select {
+		case <-probeTicker.C:
+			var wg sync.WaitGroup
+			for idx, ip := range servers {
+				wg.Add(1)
+				go func(i int, addr string) {
+					defer wg.Done()
+					st := stats[i]
+					st.total.Add(1)
+
+					rtt, err := lookupThrough(addr)
+					if err != nil || rtt > queryTimeout {
+						st.fail.Add(1)
+						return
+					}
+					st.rttNanos.Add(rtt.Nanoseconds())
+				}(idx, ip)
+			}
+			wg.Wait()
+
+		case <-summaryTicker.C:
+			fmt.Println("[summary] last 10 s:")
+			for i, ip := range servers {
+				st := stats[i]
+				total := st.total.Swap(0)
+				fail := st.fail.Swap(0)
+				sumRTT := st.rttNanos.Swap(0)
+
+				if total == 0 {
+					fmt.Printf("  %s → no queries\n", ip)
+					continue
 				}
-			}(ip)
+				ok := total - fail
+				successPct := float64(ok) / float64(total) * 100
+				avgRTTms := "n/a"
+				if ok > 0 {
+					avgRTTms = fmt.Sprintf("%.2f ms", float64(sumRTT)/float64(ok)/1e6)
+				}
+				fmt.Printf("  %s → success %.1f %% (%d/%d)  avgRTT %s\n",
+					ip, successPct, ok, total, avgRTTms)
+			}
+			fmt.Println()
 		}
-		wg.Wait()
 	}
 }
 
-// lookupThrough resolves queryDomain using addr:53 with the std‑lib resolver.
+// lookupThrough resolves queryDomain using addr:53 via net.Resolver.
 func lookupThrough(addr string) (time.Duration, error) {
 	resolver := &net.Resolver{
-		PreferGo: true, // use Go's built‑in DNS instead of libc so we can override Dial
+		PreferGo: true,
 		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
 			d := net.Dialer{Timeout: queryTimeout}
 			return d.DialContext(ctx, network, net.JoinHostPort(addr, "53"))
 		},
 	}
 
-	start := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
 	defer cancel()
-
+	start := time.Now()
 	_, err := resolver.LookupHost(ctx, queryDomain)
 	return time.Since(start), err
 }
 
-// mustClient builds an in‑cluster client first, else falls back to KUBECONFIG.
+// same helper as before --------------------------------------------------------
 func mustClient() *kubernetes.Clientset {
 	if cfg, err := rest.InClusterConfig(); err == nil {
 		cs, _ := kubernetes.NewForConfig(cfg)
