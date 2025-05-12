@@ -18,7 +18,7 @@ CoreDNS Probe is a Go-based diagnostic tool designed to monitor the performance 
 4. Collects and computes rolling statistics on query success and RTT.
 5. Outputs a summary report every 10 seconds to the console.
 
-## Installation
+## Build
 1. Clone the repository:
    ```bash
    git clone https://github.com/paulgmiller/corednsprobe.git
@@ -26,8 +26,22 @@ CoreDNS Probe is a Go-based diagnostic tool designed to monitor the performance 
 2. Build the tool:
    ```bash
    cd corednsprobe
-   go build -o corednsprobe main.go=
+   go build -o corednsprobe main.go
    ```
+
+## Deployment
+For streamlined deployment, a `deploy.yaml` file is provided. This file can be applied directly to your Kubernetes cluster to deploy the CoreDNS Probe tool. The container image is hosted on Microsoft Container Registry (MCR), ensuring secure and efficient access.
+
+### Steps to Deploy:
+1. Apply the deployment manifest:
+   ```bash
+   kubectl apply -f deploy.yaml
+   ```
+2.Monitor the deployment and ensure the pods are running:
+   ```bash
+   kubectl get pods -n <namespace>
+   ```
+
 ## Usage
 1. Set up the Kubernetes environment:
    - Ensure the tool can access your Kubernetes cluster either via in-cluster configuration or a valid `KUBECONFIG` environment variable.
@@ -48,6 +62,7 @@ The tool will display statistics every 10 seconds, including:
 ```
 
 ## Configuration
+[TODO] make these all envvars
 The following constants can be modified in the `main.go` file:
 - `namespace`: Kubernetes namespace to search for CoreDNS pods (default: `kube-system`).
 - `serviceName`: Kubernetes service name for CoreDNS (default: `kube-dns`).
