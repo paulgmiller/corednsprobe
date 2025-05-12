@@ -62,8 +62,8 @@ The tool will display statistics every 10 seconds, including:
 ```
 
 ## Configuration
-[TODO] make these all envvars
-The following constants can be modified in the `main.go` file:
+
+The following variables can be changed with args or env vars in the cotnainer. 
 - `namespace`: Kubernetes namespace to search for CoreDNS pods (default: `kube-system`).
 - `serviceName`: Kubernetes service name for CoreDNS (default: `kube-dns`).
 - `queryDomain`: Domain used for DNS queries (default: `bing.com`).
