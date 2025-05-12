@@ -3,12 +3,14 @@ module github.com/paulgmiller/corednsprobe
 go 1.24.3
 
 require (
+	github.com/alexflint/go-arg v1.5.1
 	k8s.io/api v0.33.0
 	k8s.io/apimachinery v0.33.0
 	k8s.io/client-go v0.33.0
 )
 
 require (
+	github.com/alexflint/go-scalar v1.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
 	github.com/evanphx/json-patch v0.5.2 // indirect
