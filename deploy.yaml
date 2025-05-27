@@ -46,12 +46,20 @@ spec:
     metadata:
       labels:
         app: coredns-probe
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9091"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: coredns-probe
       containers:
         - name: probe
           image: paulgmiller/corednsprobe:9674b2f
           imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9091
+              name: metrics
+              protocol: TCP
           resources:
             requests:
               cpu: 20m
@@ -59,4 +67,25 @@ spec:
             limits:
               cpu: 100m
               memory: 128Mi
-
+---
+# Service: exposes the metrics endpoint
+apiVersion: v1
+kind: Service
+metadata:
+  name: coredns-probe-metrics
+  namespace: kube-system
+  labels:
+    app: coredns-probe
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9091"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9091
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    app: coredns-probe
