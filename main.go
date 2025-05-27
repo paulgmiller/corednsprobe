@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/alexflint/go-arg"
+	"github.com/paulgmiller/corednsprobe/pkg/metrics"
 	v1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -29,6 +30,7 @@ type Config struct {
 	QueryTimeout    time.Duration `arg:"--query-timeout,env:QUERY_TIMEOUT" default:"100ms" help:"DNS query timeout"`
 	LoopInterval    time.Duration `arg:"--loop-interval,env:LOOP_INTERVAL" default:"100ms" help:"Probe loop interval"`
 	SummaryInterval time.Duration `arg:"--summary-interval,env:SUMMARY_INTERVAL" default:"10s" help:"Summary interval"`
+	MetricsAddr     string        `arg:"--metrics-addr,env:METRICS_ADDR" default:":9091" help:"Address to expose Prometheus metrics"`
 }
 
 // global settings populated in main()
@@ -39,6 +41,7 @@ var (
 	queryTimeout    time.Duration
 	loopInterval    time.Duration
 	summaryInterval time.Duration
+	metricsAddr     string
 )
 
 func main() {
@@ -47,6 +50,15 @@ func main() {
 	namespace, serviceName = cfg.Namespace, cfg.ServiceName
 	queryDomain, queryTimeout = cfg.QueryDomain, cfg.QueryTimeout
 	loopInterval, summaryInterval = cfg.LoopInterval, cfg.SummaryInterval
+	metricsAddr = cfg.MetricsAddr
+
+	// Initialize metrics
+	probeMetrics := metrics.New()
+	if err := probeMetrics.StartServer(metricsAddr); err != nil {
+		log.Printf("Warning: Failed to start metrics server: %v", err)
+	} else {
+		log.Printf("Metrics server started on %s/metrics", metricsAddr)
+	}
 
 	ctx := context.Background()
 	client := mustClient()
@@ -90,7 +102,12 @@ func main() {
 					st.total.Add(1)
 
 					rtt, err := lookupThrough(addr)
-					if err != nil || rtt > queryTimeout {
+					isSuccess := err == nil && rtt <= queryTimeout
+
+					// Record metrics for Prometheus
+					probeMetrics.RecordQuery(addr, isSuccess, rtt)
+
+					if !isSuccess {
 						st.fail.Add(1)
 						return
 					}
