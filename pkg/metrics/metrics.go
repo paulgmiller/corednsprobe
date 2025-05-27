@@ -92,13 +92,11 @@ func (p *ProbeMetrics) StartServer(addr string) error {
 		return nil
 	}
 
-	mux := http.NewServeMux()
-	handler := promhttp.HandlerFor(p.registry, promhttp.HandlerOpts{})
-	mux.Handle("/metrics", handler)
+	handler := p.GetHandler()
 
 	p.server = &http.Server{
 		Addr:    addr,
-		Handler: mux,
+		Handler: handler,
 	}
 
 	go func() {
@@ -126,4 +124,13 @@ func (p *ProbeMetrics) StopServer(timeout time.Duration) error {
 	err := p.server.Shutdown(ctx)
 	p.running = false
 	return err
+}
+
+// GetHandler returns an HTTP handler for serving metrics,
+// useful for testing or integration with existing HTTP servers.
+func (p *ProbeMetrics) GetHandler() http.Handler {
+	mux := http.NewServeMux()
+	handler := promhttp.HandlerFor(p.registry, promhttp.HandlerOpts{})
+	mux.Handle("/metrics", handler)
+	return mux
 }
