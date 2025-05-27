@@ -8,7 +8,7 @@ COPY *.go ./
 COPY pkg/ ./pkg/
 
 RUN go vet -v
-RUN go test -v
+RUN go test -v ./...
 
 RUN go build -o /go/bin/app
 
