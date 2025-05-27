@@ -1,0 +1,15 @@
+# Code Style Guidelines
+- Write idiomatic Go code following [Effective Go](https://go.dev/doc/effective_go).
+- Prioritize simplicity and maintainability over premature optimization.
+- Ensure proper error handling, returning meaningful errors.
+- Prefer dependency injection to enhance testability and modularity.
+- Maintain a consistent logging pattern using the `log` package.
+- Use concurrent programming patterns safely with goroutines and sync primitives.
+- Keep tests granular, each test should focus on a single function or behavior.
+- Use table-driven tests for functions with multiple input/output cases.
+- Run `gofmt` to maintain consistent formatting before committing code.
+- Keep dependencies updated (`go mod tidy`).
+- Only add comments where necessary, avoid redundant or obvious explanations.
+- Document exported functions and types with Go doc comments.
+- Keep README and inline documentation up-to-date.
+- Do not commit binary files or build artifacts (`.gitignore` properly configured).
