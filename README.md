@@ -11,6 +11,7 @@ CoreDNS Probe is a Go-based diagnostic tool designed to monitor the performance 
   - Aggregate round-trip time (RTT) for successful queries
 - **Parallel Probing**: Sends DNS queries to all CoreDNS pods concurrently.
 - **Summary Reporting**: Outputs success rates and average response times every 10 seconds.
+- **Prometheus Metrics**: Exposes metrics in Prometheus format via a `/metrics` HTTP endpoint for monitoring.
 
 ## How It Works
 
@@ -78,7 +79,7 @@ The tool will display statistics every 10 seconds, including:
 
 ## Configuration
 
-The following variables can be changed with args or env vars in the cotnainer.
+The following variables can be changed with args or env vars in the container.
 
 - `namespace`: Kubernetes namespace to search for CoreDNS pods (default: `kube-system`).
 - `serviceName`: Kubernetes service name for CoreDNS (default: `kube-dns`).
@@ -86,6 +87,17 @@ The following variables can be changed with args or env vars in the cotnainer.
 - `queryTimeout`: Timeout for DNS queries (default: `100ms`).
 - `loopInterval`: Interval between query loops (default: `100ms`).
 - `summaryInterval`: Interval for summary reporting (default: `10s`).
+- `metricsAddr`: Address to expose Prometheus metrics (default: `:9091`).
+
+### Available Prometheus Metrics
+
+The following metrics are available at the `/metrics` endpoint:
+
+| Metric Name | Type | Labels | Description |
+|-------------|------|--------|-------------|
+| `coredns_probe_queries_total` | Counter | `endpoint` | Total number of DNS queries sent to CoreDNS endpoints |
+| `coredns_probe_queries_failed_total` | Counter | `endpoint` | Number of failed DNS queries to CoreDNS endpoints |
+| `coredns_probe_rtt_milliseconds` | Histogram | `endpoint` | Histogram of round-trip time for successful DNS queries in milliseconds |
 
 ## License
 
