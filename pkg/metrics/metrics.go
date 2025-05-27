@@ -3,6 +3,7 @@ package metrics
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -102,7 +103,7 @@ func (p *ProbeMetrics) StartServer(addr string) error {
 
 	go func() {
 		if err := p.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			// Non-critical error: metrics unavailable but main probe functionality continues
+			log.Printf("Warning: Metrics server stopped unexpectedly: %v", err)
 		}
 	}()
 
