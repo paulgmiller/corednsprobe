@@ -2,10 +2,8 @@
 package metrics
 
 import (
-	"context"
 	"log"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -24,10 +22,6 @@ type ProbeMetrics struct {
 
 	// HTTP server for exposing metrics
 	server *http.Server
-
-	// Lock for managing server state
-	mu      sync.Mutex
-	running bool
 }
 
 // New creates a new ProbeMetrics instance with registered Prometheus metrics.
@@ -85,10 +79,7 @@ func (p *ProbeMetrics) RecordQuery(endpoint string, isSuccess bool, rtt time.Dur
 // StartServer starts the HTTP server for Prometheus metrics on the given address.
 // The server runs in a separate goroutine.
 func (p *ProbeMetrics) StartServer(addr string) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.running {
+	if p.server != nil {
 		return nil
 	}
 
@@ -105,25 +96,7 @@ func (p *ProbeMetrics) StartServer(addr string) error {
 		}
 	}()
 
-	p.running = true
 	return nil
-}
-
-// StopServer gracefully shuts down the metrics HTTP server.
-func (p *ProbeMetrics) StopServer(timeout time.Duration) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if !p.running || p.server == nil {
-		return nil
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	err := p.server.Shutdown(ctx)
-	p.running = false
-	return err
 }
 
 // GetHandler returns an HTTP handler for serving metrics,

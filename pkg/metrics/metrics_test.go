@@ -125,31 +125,6 @@ func TestProbeMetrics_RecordQuery(t *testing.T) {
 	}
 }
 
-func TestProbeMetrics_ServerOperations(t *testing.T) {
-	metrics := New()
-	addr := ":8082"
-
-	err := metrics.StartServer(addr)
-	if err != nil {
-		t.Fatalf("Failed to start metrics server: %v", err)
-	}
-
-	err = metrics.StartServer(addr)
-	if err != nil {
-		t.Errorf("Starting server again should be a no-op, got error: %v", err)
-	}
-
-	err = metrics.StopServer(5 * time.Second)
-	if err != nil {
-		t.Errorf("Failed to stop metrics server: %v", err)
-	}
-
-	err = metrics.StopServer(5 * time.Second)
-	if err != nil {
-		t.Errorf("Stopping server again should be a no-op, got error: %v", err)
-	}
-}
-
 // setupAndFetchMetrics creates a test HTTP server with the provided metrics handler
 // and returns the parsed metrics from a GET /metrics request.
 func setupAndFetchMetrics(t *testing.T, metrics *ProbeMetrics) map[string]*dto.MetricFamily {
