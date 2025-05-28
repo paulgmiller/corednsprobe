@@ -60,9 +60,8 @@ func main() {
 
 	// Initialize metrics
 	probeMetrics := metrics.New()
-	if err := probeMetrics.StartServer(ctx, metricsAddr); err != nil {
-		log.Fatalf("Failed to start metrics server: %v", err)
-	}
+	probeMetrics.StartServer(ctx, metricsAddr)
+	defer probeMetrics.StopServer(ctx)
 	log.Printf("Metrics server started on %s/metrics", metricsAddr)
 
 	client := mustClient()
@@ -149,6 +148,7 @@ func main() {
 			fmt.Println()
 		}
 	}
+
 }
 
 type epStats struct {

@@ -3,6 +3,7 @@ package metrics
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -27,6 +28,9 @@ type ProbeMetrics struct {
 
 	// Registry for all metrics
 	registry *prometheus.Registry
+
+	//hold the server so we can shutdown gracefully
+	server *http.Server
 }
 
 // New creates a new ProbeMetrics instance with registered Prometheus metrics.
@@ -55,28 +59,35 @@ func (p *ProbeMetrics) RecordQuery(endpoint string, status QueryStatus, rtt time
 	p.rttHistogram.WithLabelValues(endpoint, string(status)).Observe(float64(rtt.Nanoseconds()) / 1e6)
 }
 
-// this does not block so we will not shutdown gracefully
-func (p *ProbeMetrics) StartServer(ctx context.Context, addr string) error {
+// Start server will fork  a go routine. Failures result in program shutdown
+func (p *ProbeMetrics) StartServer(ctx context.Context, addr string) {
 
-	server := &http.Server{
-		Addr:    addr,
-		Handler: p.GetHandler(),
-	}
-
-	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("Warning: Metrics server stopped unexpectedly: %v", err)
-		}
-	}()
-
-	return nil
-}
-
-// GetHandler returns an HTTP handler for serving metrics,
-// useful for testing or integration with existing HTTP servers.
-func (p *ProbeMetrics) GetHandler() http.Handler {
 	mux := http.NewServeMux()
 	handler := promhttp.HandlerFor(p.registry, promhttp.HandlerOpts{})
 	mux.Handle("/metrics", handler)
-	return mux
+
+	p.server = &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	if err := p.server.ListenAndServe(); err != nil &&
+		!errors.Is(err, http.ErrServerClosed) {
+		log.Fatalf("listen error: %v", err)
+	}
+
+}
+
+func (p *ProbeMetrics) StopServer(ctx context.Context) {
+	if p.server == nil {
+		log.Fatalf("server is not running, cannot stop")
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	log.Println("Shutting down HTTP server ...")
+	if err := p.server.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("graceful shutdown failed: %v", err)
+	}
 }
