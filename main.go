@@ -8,8 +8,10 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/alexflint/go-arg"
@@ -53,14 +55,23 @@ func main() {
 	loopInterval, summaryInterval = cfg.LoopInterval, cfg.SummaryInterval
 	metricsAddr = cfg.MetricsAddr
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		cancel()
+	}()
+
 	// Initialize metrics
 	probeMetrics := metrics.New()
-	if err := probeMetrics.StartServer(metricsAddr); err != nil {
+	if err := probeMetrics.StartServer(ctx, metricsAddr); err != nil {
 		log.Fatalf("Failed to start metrics server: %v", err)
 	}
 	log.Printf("Metrics server started on %s/metrics", metricsAddr)
 
-	ctx := context.Background()
 	client := mustClient()
 
 	slices, err := client.DiscoveryV1().EndpointSlices(namespace).
@@ -92,6 +103,8 @@ func main() {
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case <-probeTicker.C:
 			var wg sync.WaitGroup
 			for idx, ip := range servers {

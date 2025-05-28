@@ -2,6 +2,7 @@
 package metrics
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"time"
@@ -59,7 +60,7 @@ func (p *ProbeMetrics) RecordQuery(endpoint string, status QueryStatus, rtt time
 
 // StartServer starts the HTTP server for Prometheus metrics on the given address.
 // The server runs in a separate goroutine.
-func (p *ProbeMetrics) StartServer(addr string) error {
+func (p *ProbeMetrics) StartServer(ctx context.Context, addr string) error {
 	if p.server != nil {
 		return nil
 	}
@@ -74,6 +75,17 @@ func (p *ProbeMetrics) StartServer(addr string) error {
 	go func() {
 		if err := p.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("Warning: Metrics server stopped unexpectedly: %v", err)
+		}
+	}()
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		log.Printf("Shutting down metrics server")
+		if err := p.server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Warning: Metrics server shutdown error: %v", err)
 		}
 	}()
 
