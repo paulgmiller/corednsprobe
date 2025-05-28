@@ -13,113 +13,114 @@ import (
 
 // DNSQuery represents a DNS query for testing.
 type DNSQuery struct {
-	isSuccess bool
-	rtt       time.Duration
+	status QueryStatus
+	rtt    time.Duration
 }
 
 func TestProbeMetrics_RecordQuery(t *testing.T) {
 	testCases := []struct {
-		name           string
-		endpoint       string
-		queries        []DNSQuery
-		expectedTotal  uint64
-		expectedFailed uint64
-		expectedRttMs  float64
+		name                 string
+		endpoint             string
+		queries              []DNSQuery
+		expectedSuccessRtt   float64
+		expectedTimeoutRtt   float64
+		expectedErrorRtt     float64
+		expectedSuccessCount uint64
+		expectedTimeoutCount uint64
+		expectedErrorCount   uint64
 	}{
 		{
 			name:     "successful_query",
 			endpoint: "10.0.0.1",
 			queries: []DNSQuery{
-				{isSuccess: true, rtt: 10000000 * time.Nanosecond},
+				{status: QuerySuccess, rtt: 10000000 * time.Nanosecond},
 			},
-			expectedTotal:  1,
-			expectedFailed: 0,
-			expectedRttMs:  10.0,
+			expectedSuccessRtt:   10.0,
+			expectedSuccessCount: 1,
 		},
 		{
-			name:     "failed_query",
+			name:     "timeout_query",
 			endpoint: "10.0.0.2",
 			queries: []DNSQuery{
-				{isSuccess: false, rtt: 100000000 * time.Nanosecond},
+				{status: QueryTimeout, rtt: 100000000 * time.Nanosecond},
 			},
-			expectedTotal:  1,
-			expectedFailed: 1,
-			expectedRttMs:  0.0,
+			expectedTimeoutRtt:   100.0,
+			expectedTimeoutCount: 1,
 		},
 		{
-			name:     "multiple_queries",
+			name:     "error_query",
 			endpoint: "10.0.0.3",
 			queries: []DNSQuery{
-				{isSuccess: true, rtt: 2150000 * time.Nanosecond},
-				{isSuccess: true, rtt: 2430000 * time.Nanosecond},
+				{status: QueryError, rtt: 50000000 * time.Nanosecond},
 			},
-			expectedTotal:  2,
-			expectedFailed: 0,
-			expectedRttMs:  4.58,
+			expectedErrorRtt:   50.0,
+			expectedErrorCount: 1,
+		},
+		{
+			name:     "multiple_queries_with_mixed_statuses",
+			endpoint: "10.0.0.4",
+			queries: []DNSQuery{
+				{status: QuerySuccess, rtt: 2150000 * time.Nanosecond},
+				{status: QuerySuccess, rtt: 2430000 * time.Nanosecond},
+				{status: QueryTimeout, rtt: 120000000 * time.Nanosecond},
+				{status: QueryError, rtt: 45000000 * time.Nanosecond},
+			},
+			expectedSuccessRtt:   4.58,
+			expectedTimeoutRtt:   120.0,
+			expectedErrorRtt:     45.0,
+			expectedSuccessCount: 2,
+			expectedTimeoutCount: 1,
+			expectedErrorCount:   1,
 		},
 		{
 			name:     "minimal_rtt",
-			endpoint: "10.0.0.4",
+			endpoint: "10.0.0.5",
 			queries: []DNSQuery{
-				{isSuccess: true, rtt: 10000 * time.Nanosecond},
+				{status: QuerySuccess, rtt: 10000 * time.Nanosecond},
 			},
-			expectedTotal:  1,
-			expectedFailed: 0,
-			expectedRttMs:  0.01,
+			expectedSuccessRtt:   0.01,
+			expectedSuccessCount: 1,
 		},
 		{
 			name:     "high_rtt",
-			endpoint: "10.0.0.5",
-			queries: []DNSQuery{
-				{isSuccess: true, rtt: 1000000000 * time.Nanosecond},
-			},
-			expectedTotal:  1,
-			expectedFailed: 0,
-			expectedRttMs:  1000.0,
-		},
-		{
-			name:     "mixed_success_failure",
 			endpoint: "10.0.0.6",
 			queries: []DNSQuery{
-				{isSuccess: true, rtt: 5000000 * time.Nanosecond},
-				{isSuccess: false, rtt: 25000000 * time.Nanosecond},
+				{status: QuerySuccess, rtt: 1000000000 * time.Nanosecond},
 			},
-			expectedTotal:  2,
-			expectedFailed: 1,
-			expectedRttMs:  5.0,
+			expectedSuccessRtt:   1000.0,
+			expectedSuccessCount: 1,
 		},
 	}
 
 	metrics := New()
 	for _, tc := range testCases {
 		for _, q := range tc.queries {
-			metrics.RecordQuery(tc.endpoint, q.isSuccess, q.rtt)
+			metrics.RecordQuery(tc.endpoint, q.status, q.rtt)
 		}
 	}
 
 	metricFamilies := setupAndFetchMetrics(t, metrics)
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			verifyCounter(t, metricFamilies, "coredns_probe_queries_total", tc.endpoint, tc.expectedTotal)
-
-			if tc.expectedFailed > 0 {
-				verifyCounter(t, metricFamilies, "coredns_probe_queries_failed_total", tc.endpoint, tc.expectedFailed)
+			if tc.expectedTimeoutCount > 0 {
+				verifyHistogram(t, metricFamilies, "coredns_probe_rtt_milliseconds",
+					tc.endpoint, string(QueryTimeout), tc.expectedTimeoutRtt, tc.expectedTimeoutCount)
 			} else {
-				verifyMetricNotExists(t, metricFamilies, "coredns_probe_queries_failed_total", tc.endpoint)
+				verifyHistogramNotExists(t, metricFamilies, "coredns_probe_rtt_milliseconds", tc.endpoint, string(QueryTimeout))
 			}
 
-			hasSuccessfulQueries := false
-			for _, q := range tc.queries {
-				if q.isSuccess {
-					hasSuccessfulQueries = true
-					break
-				}
+			if tc.expectedErrorCount > 0 {
+				verifyHistogram(t, metricFamilies, "coredns_probe_rtt_milliseconds",
+					tc.endpoint, string(QueryError), tc.expectedErrorRtt, tc.expectedErrorCount)
+			} else {
+				verifyHistogramNotExists(t, metricFamilies, "coredns_probe_rtt_milliseconds", tc.endpoint, string(QueryError))
 			}
 
-			if hasSuccessfulQueries {
-				verifyHistogramSum(t, metricFamilies, "coredns_probe_rtt_milliseconds", tc.endpoint, tc.expectedRttMs)
+			if tc.expectedSuccessCount > 0 {
+				verifyHistogram(t, metricFamilies, "coredns_probe_rtt_milliseconds",
+					tc.endpoint, string(QuerySuccess), tc.expectedSuccessRtt, tc.expectedSuccessCount)
 			} else {
-				verifyMetricNotExists(t, metricFamilies, "coredns_probe_rtt_milliseconds", tc.endpoint)
+				verifyHistogramNotExists(t, metricFamilies, "coredns_probe_rtt_milliseconds", tc.endpoint, string(QuerySuccess))
 			}
 		})
 	}
@@ -153,45 +154,49 @@ func setupAndFetchMetrics(t *testing.T, metrics *ProbeMetrics) map[string]*dto.M
 	return metricFamilies
 }
 
-// verifyCounter checks that a counter metric exists with the expected value.
-func verifyCounter(t *testing.T, families map[string]*dto.MetricFamily, metricName, labelValue string, expected uint64) {
+// verifyHistogram checks that a histogram metric exists with the expected sum and count.
+func verifyHistogram(t *testing.T, families map[string]*dto.MetricFamily, metricName, endpoint, status string,
+	expectedSum float64, expectedCount uint64) {
 	t.Helper()
 
-	m := verifyMetricCommon(t, families, metricName, labelValue, dto.MetricType_COUNTER)
-
-	counter := m.GetCounter()
-	if counter == nil {
-		t.Fatalf("Counter data missing for %s", metricName)
+	family, exists := families[metricName]
+	if !exists {
+		t.Fatalf("Metric %s not found", metricName)
 	}
 
-	actual := uint64(counter.GetValue())
-	if actual != expected {
-		t.Errorf("%s: expected %d, got %d", metricName, expected, actual)
-	}
-}
-
-// verifyHistogramSum checks that a histogram metric exists with the expected sum.
-func verifyHistogramSum(t *testing.T, families map[string]*dto.MetricFamily, metricName, labelValue string, expected float64) {
-	t.Helper()
-
-	m := verifyMetricCommon(t, families, metricName, labelValue, dto.MetricType_HISTOGRAM)
-
-	histogram := m.GetHistogram()
-	if histogram == nil {
-		t.Fatalf("Histogram data missing for %s", metricName)
+	if family.GetType() != dto.MetricType_HISTOGRAM {
+		t.Fatalf("Expected histogram type for %s, got %v", metricName, family.GetType())
 	}
 
-	actual := histogram.GetSampleSum()
-	if !(math.Abs(actual-expected) < 0.01) {
-		t.Errorf("%s sum: expected %.2f, got %.2f", metricName, expected, actual)
+	var histogram *dto.Histogram
+	found := false
+	for _, m := range family.Metric {
+		if hasLabel(m, "endpoint", endpoint) && hasLabel(m, "status", status) {
+			histogram = m.GetHistogram()
+			if histogram == nil {
+				t.Fatalf("Histogram data missing for %s with endpoint=%s, status=%s", metricName, endpoint, status)
+			}
+			found = true
+			break
+		}
 	}
 
-	if expected > 0 && histogram.GetSampleCount() == 0 {
-		t.Errorf("%s has positive sum but zero samples", metricName)
+	if !found {
+		t.Fatalf("No metric %s found with endpoint=%s, status=%s", metricName, endpoint, status)
+	}
+
+	actualSum := histogram.GetSampleSum()
+	if !(math.Abs(actualSum-expectedSum) < 0.01) {
+		t.Errorf("%s sum for %s: expected %.2f, got %.2f", metricName, status, expectedSum, actualSum)
+	}
+
+	actualCount := histogram.GetSampleCount()
+	if actualCount != expectedCount {
+		t.Errorf("%s sample count for %s: expected %d, got %d", metricName, status, expectedCount, actualCount)
 	}
 
 	// For non-zero RTTs, check that at least one bucket has been incremented.
-	if expected > 0 {
+	if expectedSum > 0 {
 		foundIncrement := false
 		for _, bucket := range histogram.GetBucket() {
 			if bucket.GetCumulativeCount() > 0 {
@@ -205,8 +210,8 @@ func verifyHistogramSum(t *testing.T, families map[string]*dto.MetricFamily, met
 	}
 }
 
-// verifyMetricNotExists checks that a metric doesn't exist for a specific endpoint label.
-func verifyMetricNotExists(t *testing.T, families map[string]*dto.MetricFamily, metricName, endpointValue string) {
+// verifyHistogramNotExists checks that a histogram metric doesn't exist for a specific endpoint and status label.
+func verifyHistogramNotExists(t *testing.T, families map[string]*dto.MetricFamily, metricName, endpoint, status string) {
 	t.Helper()
 
 	family, exists := families[metricName]
@@ -215,35 +220,11 @@ func verifyMetricNotExists(t *testing.T, families map[string]*dto.MetricFamily, 
 	}
 
 	for _, m := range family.Metric {
-		if hasLabel(m, "endpoint", endpointValue) {
-			t.Errorf("Metric %s unexpectedly exists with endpoint=%s", metricName, endpointValue)
+		if hasLabel(m, "endpoint", endpoint) && hasLabel(m, "status", status) {
+			t.Errorf("Histogram metric %s unexpectedly exists with endpoint=%s, status=%s", metricName, endpoint, status)
 			return
 		}
 	}
-}
-
-// verifyMetricCommon performs common validation for metrics and returns the matched metric.
-func verifyMetricCommon(t *testing.T, families map[string]*dto.MetricFamily, metricName, labelValue string,
-	expectedType dto.MetricType) *dto.Metric {
-
-	t.Helper()
-	family, exists := families[metricName]
-	if !exists {
-		t.Fatalf("Metric %s not found", metricName)
-	}
-
-	if family.GetType() != expectedType {
-		t.Errorf("Expected %v type for %s, got %v", expectedType, metricName, family.GetType())
-	}
-
-	for _, m := range family.Metric {
-		if hasLabel(m, "endpoint", labelValue) {
-			return m
-		}
-	}
-
-	t.Fatalf("No metric %s found with endpoint=%s", metricName, labelValue)
-	return nil
 }
 
 // hasLabel checks if a metric has a label with the given name and value.
