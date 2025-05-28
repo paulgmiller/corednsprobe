@@ -46,10 +46,6 @@ spec:
     metadata:
       labels:
         app: coredns-probe
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "9091"
-        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: coredns-probe
       containers:
