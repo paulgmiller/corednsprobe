@@ -95,9 +95,13 @@ The following metrics are available at the `/metrics` endpoint:
 
 | Metric Name | Type | Labels | Description |
 |-------------|------|--------|-------------|
-| `coredns_probe_queries_total` | Counter | `endpoint` | Total number of DNS queries sent to CoreDNS endpoints |
-| `coredns_probe_queries_failed_total` | Counter | `endpoint` | Number of failed DNS queries to CoreDNS endpoints |
-| `coredns_probe_rtt_milliseconds` | Histogram | `endpoint` | Histogram of round-trip time for successful DNS queries in milliseconds |
+| `coredns_probe_rtt_milliseconds` | Histogram | `endpoint`, `status` | Histogram of round-trip time for DNS queries in milliseconds |
+
+The `status` label has the following possible values:
+
+- `success`: Query completed successfully
+- `timeout`: Query timed out
+- `error`: Query failed due to an error other than timeout
 
 ## License
 
