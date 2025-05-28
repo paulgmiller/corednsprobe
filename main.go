@@ -55,10 +55,9 @@ func main() {
 	// Initialize metrics
 	probeMetrics := metrics.New()
 	if err := probeMetrics.StartServer(metricsAddr); err != nil {
-		log.Printf("Warning: Failed to start metrics server: %v", err)
-	} else {
-		log.Printf("Metrics server started on %s/metrics", metricsAddr)
+		log.Fatalf("Failed to start metrics server: %v", err)
 	}
+	log.Printf("Metrics server started on %s/metrics", metricsAddr)
 
 	ctx := context.Background()
 	client := mustClient()
