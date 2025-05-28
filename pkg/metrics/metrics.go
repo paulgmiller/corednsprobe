@@ -10,12 +10,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// QueryStatus represents the status of a DNS query.
+type QueryStatus string
+
+const (
+	QuerySuccess QueryStatus = "success"
+	QueryTimeout QueryStatus = "timeout"
+	QueryError   QueryStatus = "error"
+)
+
 // ProbeMetrics holds all metrics for CoreDNS probe.
 type ProbeMetrics struct {
 	// Metrics for DNS queries per CoreDNS endpoint
-	totalQueriesPerEndpoint  *prometheus.CounterVec
-	failedQueriesPerEndpoint *prometheus.CounterVec
-	rttHistogram             *prometheus.HistogramVec
+	rttHistogram *prometheus.HistogramVec
 
 	// Registry for all metrics
 	registry *prometheus.Registry
@@ -28,52 +35,26 @@ type ProbeMetrics struct {
 func New() *ProbeMetrics {
 	registry := prometheus.NewRegistry()
 
-	totalQueries := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "coredns_probe_queries_total",
-			Help: "Total number of DNS queries sent to CoreDNS endpoints",
-		},
-		[]string{"endpoint"},
-	)
-
-	failedQueries := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "coredns_probe_queries_failed_total",
-			Help: "Number of failed DNS queries to CoreDNS endpoints",
-		},
-		[]string{"endpoint"},
-	)
-
 	rttHistogram := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "coredns_probe_rtt_milliseconds",
-			Help:    "Histogram of round-trip time for successful DNS queries in milliseconds",
+			Help:    "Histogram of round-trip time for DNS queries in milliseconds",
 			Buckets: []float64{0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 10, 20, 50, 100, 200, 500, 1000},
 		},
-		[]string{"endpoint"},
+		[]string{"endpoint", "status"},
 	)
 
-	registry.MustRegister(totalQueries)
-	registry.MustRegister(failedQueries)
 	registry.MustRegister(rttHistogram)
 
 	return &ProbeMetrics{
-		totalQueriesPerEndpoint:  totalQueries,
-		failedQueriesPerEndpoint: failedQueries,
-		rttHistogram:             rttHistogram,
-		registry:                 registry,
+		rttHistogram: rttHistogram,
+		registry:     registry,
 	}
 }
 
 // RecordQuery records statistics for a single DNS probe query.
-func (p *ProbeMetrics) RecordQuery(endpoint string, isSuccess bool, rtt time.Duration) {
-	p.totalQueriesPerEndpoint.WithLabelValues(endpoint).Inc()
-
-	if isSuccess {
-		p.rttHistogram.WithLabelValues(endpoint).Observe(float64(rtt.Nanoseconds()) / 1e6)
-	} else {
-		p.failedQueriesPerEndpoint.WithLabelValues(endpoint).Inc()
-	}
+func (p *ProbeMetrics) RecordQuery(endpoint string, status QueryStatus, rtt time.Duration) {
+	p.rttHistogram.WithLabelValues(endpoint, string(status)).Observe(float64(rtt.Nanoseconds()) / 1e6)
 }
 
 // StartServer starts the HTTP server for Prometheus metrics on the given address.

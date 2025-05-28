@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -101,15 +102,18 @@ func main() {
 					st.total.Add(1)
 
 					rtt, err := lookupThrough(addr)
-					isSuccess := err == nil && rtt <= queryTimeout
-
-					// Record metrics for Prometheus
-					probeMetrics.RecordQuery(addr, isSuccess, rtt)
-
-					if !isSuccess {
+					if err != nil || rtt > queryTimeout {
 						st.fail.Add(1)
+						if errors.Is(err, context.DeadlineExceeded) {
+							probeMetrics.RecordQuery(addr, metrics.QueryTimeout, rtt)
+							return
+						}
+
+						probeMetrics.RecordQuery(addr, metrics.QueryError, rtt)
 						return
 					}
+
+					probeMetrics.RecordQuery(addr, metrics.QuerySuccess, rtt)
 					st.rttNanos.Add(rtt.Nanoseconds())
 				}(idx, ip)
 			}
