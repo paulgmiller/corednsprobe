@@ -52,6 +52,10 @@ spec:
         - name: probe
           image: paulgmiller/corednsprobe:9674b2f
           imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9091
+              name: metrics
+              protocol: TCP
           resources:
             requests:
               cpu: 20m
@@ -59,4 +63,3 @@ spec:
             limits:
               cpu: 100m
               memory: 128Mi
-

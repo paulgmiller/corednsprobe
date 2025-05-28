@@ -3,15 +3,19 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/alexflint/go-arg"
+	"github.com/paulgmiller/corednsprobe/pkg/metrics"
 	v1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -29,6 +33,7 @@ type Config struct {
 	QueryTimeout    time.Duration `arg:"--query-timeout,env:QUERY_TIMEOUT" default:"100ms" help:"DNS query timeout"`
 	LoopInterval    time.Duration `arg:"--loop-interval,env:LOOP_INTERVAL" default:"100ms" help:"Probe loop interval"`
 	SummaryInterval time.Duration `arg:"--summary-interval,env:SUMMARY_INTERVAL" default:"10s" help:"Summary interval"`
+	MetricsAddr     string        `arg:"--metrics-addr,env:METRICS_ADDR" default:":9091" help:"Address to expose Prometheus metrics"`
 }
 
 // global settings populated in main()
@@ -39,6 +44,7 @@ var (
 	queryTimeout    time.Duration
 	loopInterval    time.Duration
 	summaryInterval time.Duration
+	metricsAddr     string
 )
 
 func main() {
@@ -47,8 +53,25 @@ func main() {
 	namespace, serviceName = cfg.Namespace, cfg.ServiceName
 	queryDomain, queryTimeout = cfg.QueryDomain, cfg.QueryTimeout
 	loopInterval, summaryInterval = cfg.LoopInterval, cfg.SummaryInterval
+	metricsAddr = cfg.MetricsAddr
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		cancel()
+	}()
+
+	// Initialize metrics
+	probeMetrics := metrics.New()
+	if err := probeMetrics.StartServer(ctx, metricsAddr); err != nil {
+		log.Fatalf("Failed to start metrics server: %v", err)
+	}
+	log.Printf("Metrics server started on %s/metrics", metricsAddr)
+
 	client := mustClient()
 
 	slices, err := client.DiscoveryV1().EndpointSlices(namespace).
@@ -80,6 +103,8 @@ func main() {
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case <-probeTicker.C:
 			var wg sync.WaitGroup
 			for idx, ip := range servers {
@@ -92,8 +117,16 @@ func main() {
 					rtt, err := lookupThrough(addr)
 					if err != nil || rtt > queryTimeout {
 						st.fail.Add(1)
+						if errors.Is(err, context.DeadlineExceeded) {
+							probeMetrics.RecordQuery(addr, metrics.QueryTimeout, rtt)
+							return
+						}
+
+						probeMetrics.RecordQuery(addr, metrics.QueryError, rtt)
 						return
 					}
+
+					probeMetrics.RecordQuery(addr, metrics.QuerySuccess, rtt)
 					st.rttNanos.Add(rtt.Nanoseconds())
 				}(idx, ip)
 			}
