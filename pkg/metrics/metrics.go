@@ -27,9 +27,6 @@ type ProbeMetrics struct {
 
 	// Registry for all metrics
 	registry *prometheus.Registry
-
-	// HTTP server for exposing metrics
-	server *http.Server
 }
 
 // New creates a new ProbeMetrics instance with registered Prometheus metrics.
@@ -58,34 +55,17 @@ func (p *ProbeMetrics) RecordQuery(endpoint string, status QueryStatus, rtt time
 	p.rttHistogram.WithLabelValues(endpoint, string(status)).Observe(float64(rtt.Nanoseconds()) / 1e6)
 }
 
-// StartServer starts the HTTP server for Prometheus metrics on the given address.
-// The server runs in a separate goroutine.
+// this does not block so we will not shutdown gracefully
 func (p *ProbeMetrics) StartServer(ctx context.Context, addr string) error {
-	if p.server != nil {
-		return nil
-	}
 
-	handler := p.GetHandler()
-
-	p.server = &http.Server{
+	server := &http.Server{
 		Addr:    addr,
-		Handler: handler,
+		Handler: p.GetHandler(),
 	}
 
 	go func() {
-		if err := p.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("Warning: Metrics server stopped unexpectedly: %v", err)
-		}
-	}()
-
-	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		log.Printf("Shutting down metrics server")
-		if err := p.server.Shutdown(shutdownCtx); err != nil {
-			log.Printf("Warning: Metrics server shutdown error: %v", err)
 		}
 	}()
 

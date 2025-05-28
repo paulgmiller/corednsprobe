@@ -55,15 +55,8 @@ func main() {
 	loopInterval, summaryInterval = cfg.LoopInterval, cfg.SummaryInterval
 	metricsAddr = cfg.MetricsAddr
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		cancel()
-	}()
 
 	// Initialize metrics
 	probeMetrics := metrics.New()
