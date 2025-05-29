@@ -59,10 +59,7 @@ func main() {
 	defer cancel()
 
 	// Initialize metrics
-	probeMetrics := metrics.New()
-	if err := probeMetrics.StartServer(ctx, metricsAddr); err != nil {
-		log.Fatalf("Failed to start metrics server: %v", err)
-	}
+	metrics.StartServer(ctx, metricsAddr)
 	log.Printf("Metrics server started on %s/metrics", metricsAddr)
 
 	client := mustClient()
@@ -111,15 +108,15 @@ func main() {
 					if err != nil || rtt > queryTimeout {
 						st.fail.Add(1)
 						if errors.Is(err, context.DeadlineExceeded) {
-							probeMetrics.RecordQuery(addr, metrics.QueryTimeout, rtt)
+							metrics.RecordQuery(addr, metrics.QueryTimeout, rtt)
 							return
 						}
 
-						probeMetrics.RecordQuery(addr, metrics.QueryError, rtt)
+						metrics.RecordQuery(addr, metrics.QueryError, rtt)
 						return
 					}
 
-					probeMetrics.RecordQuery(addr, metrics.QuerySuccess, rtt)
+					metrics.RecordQuery(addr, metrics.QuerySuccess, rtt)
 					st.rttNanos.Add(rtt.Nanoseconds())
 				}(idx, ip)
 			}
