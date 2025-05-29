@@ -40,6 +40,6 @@ func StartServer(ctx context.Context, addr string) {
 	http.Handle("/metrics", promhttp.Handler()) // uses the default registry
 
 	go func() {
-		log.Fatal(http.ListenAndServe(":8080", nil))
+		log.Fatal(http.ListenAndServe(addr, nil))
 	}()
 }
