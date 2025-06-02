@@ -45,7 +45,7 @@ For streamlined deployment, a `deploy.yaml` file is provided. This file can be a
 1. Apply the deployment manifest:
 
    ```bash
-   kubectl apply -f deploy.yaml
+   kubectl kustomize config/base/ | kubectl apply -f -
    ```
 
 1. Monitor the deployment and ensure the pods are running:
