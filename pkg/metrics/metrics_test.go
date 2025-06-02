@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 )
@@ -17,7 +19,7 @@ type DNSQuery struct {
 	rtt    time.Duration
 }
 
-func TestProbeMetrics_RecordQuery(t *testing.T) {
+func TestRecordQuery(t *testing.T) {
 	testCases := []struct {
 		name                 string
 		endpoint             string
@@ -92,14 +94,13 @@ func TestProbeMetrics_RecordQuery(t *testing.T) {
 		},
 	}
 
-	metrics := New()
 	for _, tc := range testCases {
 		for _, q := range tc.queries {
-			metrics.RecordQuery(tc.endpoint, q.status, q.rtt)
+			RecordQuery(tc.endpoint, q.status, q.rtt)
 		}
 	}
 
-	metricFamilies := setupAndFetchMetrics(t, metrics)
+	metricFamilies := setupAndFetchMetrics(t)
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.expectedTimeoutCount > 0 {
@@ -126,16 +127,16 @@ func TestProbeMetrics_RecordQuery(t *testing.T) {
 	}
 }
 
-// setupAndFetchMetrics creates a test HTTP server with the provided metrics handler
+// setupAndFetchMetrics creates a test HTTP server with Prometheus metrics handler
 // and returns the parsed metrics from a GET /metrics request.
-func setupAndFetchMetrics(t *testing.T, metrics *ProbeMetrics) map[string]*dto.MetricFamily {
+func setupAndFetchMetrics(t *testing.T) map[string]*dto.MetricFamily {
 	t.Helper()
 
-	handler := metrics.GetHandler()
-	server := httptest.NewServer(handler)
+	prometheus.MustRegister(rttHistogram)
+	server := httptest.NewServer(promhttp.Handler())
 	defer server.Close()
 
-	resp, err := http.Get(server.URL + "/metrics")
+	resp, err := http.Get(server.URL)
 	if err != nil {
 		t.Fatalf("Failed to fetch metrics: %v", err)
 	}
