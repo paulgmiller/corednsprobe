@@ -1,0 +1,39 @@
+name: End-to-End Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  e2e-test:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.3"
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Install ginkgo
+        run: go install github.com/onsi/ginkgo/v2/ginkgo
+
+      - name: Install kind
+        run: go install sigs.k8s.io/kind@v0.29.0
+
+      - name: Install Kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Run E2E tests
+        run: |
+          ginkgo -v test/e2e/
