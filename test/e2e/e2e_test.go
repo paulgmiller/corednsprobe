@@ -152,16 +152,16 @@ var _ = Describe("CoreDNS Probe deployment", func() {
 			"-n", namespace)
 		portForwardCmd.Env = os.Environ()
 		session, err := gexec.Start(portForwardCmd, GinkgoWriter, GinkgoWriter)
-		defer session.Kill()
 		Expect(err).NotTo(HaveOccurred())
+		defer session.Kill()
 
 		By("Waiting for port forwarding to be established")
 		Eventually(session, "5s", "1s").Should(gbytes.Say("Forwarding from"), "Failed to establish port-forwarding")
 
 		By("Checking if metrics endpoint is accessible")
 		res, err := http.Get(fmt.Sprintf("http://localhost:%d/metrics", metricsPort))
-		defer res.Body.Close()
 		Expect(err).NotTo(HaveOccurred(), "Failed to access metrics endpoint")
+		defer res.Body.Close()
 		Expect(res.StatusCode).To(Equal(http.StatusOK), "Metrics endpoint did not return 200 OK")
 
 		By("Verifying metrics format")
