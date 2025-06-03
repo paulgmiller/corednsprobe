@@ -23,9 +23,6 @@ jobs:
       - name: Setup kubectl
         uses: azure/setup-kubectl@v4
 
-      - name: Install ginkgo
-        run: go install github.com/onsi/ginkgo/v2/ginkgo
-
       - name: Install kind
         run: go install sigs.k8s.io/kind@v0.29.0
 
@@ -35,4 +32,4 @@ jobs:
           sudo mv kustomize /usr/local/bin/
 
       - name: Run E2E tests
-        run: ginkgo -v test/e2e/
+        run: go test ./test/e2e/ -v -ginkgo.v
