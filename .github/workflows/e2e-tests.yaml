@@ -35,5 +35,4 @@ jobs:
           sudo mv kustomize /usr/local/bin/
 
       - name: Run E2E tests
-        run: |
-          ginkgo -v test/e2e/
+        run: ginkgo -v test/e2e/
