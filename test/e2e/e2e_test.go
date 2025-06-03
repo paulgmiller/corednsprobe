@@ -5,10 +5,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -36,8 +38,9 @@ const (
 )
 
 var (
-	clientset *kubernetes.Clientset
-	testDir   string
+	clientset  *kubernetes.Clientset
+	testDir    string
+	corednsIPs map[string]struct{}
 )
 
 var _ = BeforeSuite(func() {
@@ -74,6 +77,7 @@ var _ = BeforeSuite(func() {
 	GinkgoWriter.Println(string(loadOutput))
 
 	By("Waiting for CoreDNS pods to be running")
+	corednsIPs = make(map[string]struct{})
 	Eventually(func() bool {
 		podList, err := clientset.CoreV1().Pods(namespace).List(context.TODO(), metav1.ListOptions{
 			LabelSelector: "k8s-app=kube-dns",
@@ -82,12 +86,14 @@ var _ = BeforeSuite(func() {
 			return false
 		}
 		for _, pod := range podList.Items {
-			if pod.Status.Phase != "Running" {
+			if pod.Status.Phase != "Running" || pod.Status.PodIP == "" {
 				return false
 			}
+			corednsIPs[pod.Status.PodIP] = struct{}{}
 		}
 		return len(podList.Items) > 0
 	}, "180s", "2s").Should(BeTrue(), "CoreDNS pods are not running")
+	GinkgoWriter.Println("CoreDNS pod IPs:", slices.Collect(maps.Keys(corednsIPs)))
 
 	By("Deploying CoreDNS probe")
 	deployCmdStr := fmt.Sprintf("kustomize edit set image %s && kustomize build . | kubectl apply -f -", probeImage)
@@ -173,6 +179,23 @@ var _ = Describe("CoreDNS Probe deployment", func() {
 		Expect(err).NotTo(HaveOccurred(), "Failed to parse metrics")
 		metric := metrics["coredns_probe_rtt_milliseconds"]
 		Expect(metric).NotTo(BeNil(), "Expected coredns_probe_rtt_milliseconds metric not found")
+
+		By("Verifying metrics endpoint labels match CoreDNS IPs")
+		Expect(corednsIPs).NotTo(BeEmpty(), "No CoreDNS pod IPs were discovered")
+		metricEndpoints := make(map[string]struct{})
+		for _, m := range metric.Metric {
+			for _, label := range m.Label {
+				if label.GetName() == "endpoint" {
+					ip := label.GetValue()
+					_, exists := corednsIPs[ip]
+					Expect(exists).To(BeTrue(), fmt.Sprintf("Unexpected endpoint in metrics: %s", ip))
+					metricEndpoints[ip] = struct{}{}
+					GinkgoWriter.Println("Found metrics for CoreDNS IP:", ip)
+					break
+				}
+			}
+		}
+		Expect(maps.Equal(metricEndpoints, corednsIPs)).To(BeTrue(), "Metrics endpoints don't match CoreDNS IPs")
 	})
 })
 
